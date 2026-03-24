@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Surveillance Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Header with Alerts Bar -->
+        <header class="header">
+            <div class="header-top">
+                <div class="logo">
+                    <h1>🚨 Surveillance Dashboard</h1>
+                </div>
+                <div class="system-info">
+                    <div class="status-badge">
+                        <span class="status-dot"></span>Live
+                    </div>
+                    <div class="timestamp" id="current-time"></div>
+                </div>
+            </div>
+            
+            <!-- Alerts Bar -->
+            <div class="alerts-bar" id="alerts-container">
+                <div class="alert-scroll">
+                    <div class="alert alert--info">Loading alerts...</div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Top Section: Camera Feed and Zone Grid -->
+            <div class="top-section">
+                <!-- Camera Feed -->
+                <div class="camera-section">
+                    <div class="card">
+                        <h2 class="card-title">📹 Live Camera Feed</h2>
+                        <div class="camera-container">
+                            <div class="camera-feed" id="camera-feed">
+                                <div class="grid-overlay">
+                                    <div class="grid-row">
+                                        <div class="grid-cell" data-zone="A1" data-count="0"><span class="camera-zone-id">A1</span><span class="camera-zone-count">0</span></div>
+                                        <div class="grid-cell" data-zone="A2" data-count="0"><span class="camera-zone-id">A2</span><span class="camera-zone-count">0</span></div>
+                                        <div class="grid-cell" data-zone="A3" data-count="0"><span class="camera-zone-id">A3</span><span class="camera-zone-count">0</span></div>
+                                    </div>
+                                    <div class="grid-row">
+                                        <div class="grid-cell" data-zone="B1" data-count="0"><span class="camera-zone-id">B1</span><span class="camera-zone-count">0</span></div>
+                                        <div class="grid-cell" data-zone="B2" data-count="0"><span class="camera-zone-id">B2</span><span class="camera-zone-count">0</span></div>
+                                        <div class="grid-cell" data-zone="B3" data-count="0"><span class="camera-zone-id">B3</span><span class="camera-zone-count">0</span></div>
+                                    </div>
+                                    <div class="grid-row">
+                                        <div class="grid-cell" data-zone="C1" data-count="0"><span class="camera-zone-id">C1</span><span class="camera-zone-count">0</span></div>
+                                        <div class="grid-cell" data-zone="C2" data-count="0"><span class="camera-zone-id">C2</span><span class="camera-zone-count">0</span></div>
+                                        <div class="grid-cell" data-zone="C3" data-count="0"><span class="camera-zone-id">C3</span><span class="camera-zone-count">0</span></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="camera-info">📷 Camera 1 - Main Entrance</div>
+                            <div class="image-analyzer" id="image-analyzer">
+                                <label class="analyzer-label" for="people-image-input">Analyze uploaded image</label>
+                                <div class="analyzer-controls">
+                                    <input type="file" id="people-image-input" accept="image/*">
+                                    <button type="button" id="people-image-submit">Detect People</button>
+                                </div>
+                                <div class="analyzer-result" id="people-image-result">No image analyzed yet.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Zone Grid Visualization -->
+                <div class="zone-grid-section">
+                    <div class="card">
+                        <h2 class="card-title">🧩 Zone Distribution</h2>
+                        <div class="zone-grid" id="zone-grid">
+                            <div class="zone-block" data-zone="A1">
+                                <span class="zone-label">A1</span>
+                                <span class="zone-count">0</span>
+                            </div>
+                            <div class="zone-block" data-zone="A2">
+                                <span class="zone-label">A2</span>
+                                <span class="zone-count">0</span>
+                            </div>
+                            <div class="zone-block" data-zone="A3">
+                                <span class="zone-label">A3</span>
+                                <span class="zone-count">0</span>
+                            </div>
+                            <div class="zone-block" data-zone="B1">
+                                <span class="zone-label">B1</span>
+                                <span class="zone-count">0</span>
+                            </div>
+                            <div class="zone-block" data-zone="B2">
+                                <span class="zone-label">B2</span>
+                                <span class="zone-count">0</span>
+                            </div>
+                            <div class="zone-block" data-zone="B3">
+                                <span class="zone-label">B3</span>
+                                <span class="zone-count">0</span>
+                            </div>
+                            <div class="zone-block" data-zone="C1">
+                                <span class="zone-label">C1</span>
+                                <span class="zone-count">0</span>
+                            </div>
+                            <div class="zone-block" data-zone="C2">
+                                <span class="zone-label">C2</span>
+                                <span class="zone-count">0</span>
+                            </div>
+                            <div class="zone-block" data-zone="C3">
+                                <span class="zone-label">C3</span>
+                                <span class="zone-count">0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Middle Section: Zone Table and Total Count -->
+            <div class="middle-section">
+                <!-- Total Count Card -->
+                <div class="count-card-section">
+                    <div class="card count-card">
+                        <h2 class="card-title">👥 Total Count</h2>
+                        <div class="total-count" id="total-count">0</div>
+                        <div class="count-label">People Detected</div>
+                        <div class="last-update" id="last-update">Last updated: --</div>
+                    </div>
+                </div>
+
+                <!-- Zone Table -->
+                <div class="table-section">
+                    <div class="card">
+                        <h2 class="card-title">📊 Zone Details</h2>
+                        <div class="table-wrapper">
+                            <table class="zones-table">
+                                <thead>
+                                    <tr>
+                                        <th>Zone</th>
+                                        <th>People</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="zones-table-body">
+                                    <!-- Populated by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Section: Trend Chart -->
+            <div class="bottom-section">
+                <div class="card">
+                    <h2 class="card-title">📈 Trend Analysis (Last 5 Minutes)</h2>
+                    <div class="chart-container">
+                        <canvas id="trendChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Loading Indicator -->
+    <div class="loading-indicator" id="loading-indicator">
+        <div class="spinner"></div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>
