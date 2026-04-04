@@ -1,45 +1,35 @@
-from PIL import Image
+from ultralytics import YOLO
+import cv2
 import numpy as np
-
-try:
-    import cv2
-except ImportError:
-    cv2 = None
-
+import base64
+from PIL import Image
+import io
 
 class CrowdCounter:
-    def __init__(self, model_type="stub"):
-        self.model_type = model_type
+    def __init__(self, model_type="yolov8n.pt"):
+        # Automatically downloads the nano model (fastest)
+        self.model = YOLO(model_type)
 
-    def predict(self, pil_image: Image.Image):
-        if self.model_type == "stub":
-            return self._predict_stub(pil_image)
-        raise ValueError(f"Unsupported model_type: {self.model_type}")
+    def predict_and_draw(self, pil_image: Image.Image, zone_id: str):
+        # Convert PIL to OpenCV format
+        opencv_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+        
+        # Run detection for class 0 (person)
+        results = self.model.predict(opencv_image, classes=[0], conf=0.25, verbose=False)
+        boxes = results[0].boxes
+        count = len(boxes)
 
-    def _predict_stub(self, pil_image: Image.Image):
-        """
-        Heuristic estimate for demo/testing.
-        Not a real crowd model.
-        Works a bit better on smaller tiles than full large images.
-        """
-        gray = np.array(pil_image.convert("L")).astype(np.float32)
+        # Draw boxes on the image
+        for box in boxes:
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            cv2.rectangle(opencv_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-        h, w = gray.shape
-        area = h * w
+        # Add Zone Label Overlay
+        cv2.putText(opencv_image, f"Zone {zone_id}", (10, 25), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
-        gx = np.abs(np.diff(gray, axis=1))
-        gy = np.abs(np.diff(gray, axis=0))
-
-        edge_strength = (gx.mean() + gy.mean()) / 2.0
-        texture = gray.std()
-        contrast = gray.max() - gray.min()
-
-        score = (0.5 * edge_strength) + (0.3 * texture) + (0.2 * contrast)
-
-        # tuned for tile-based processing
-        estimated_count = int(max(0, round((score * area) / 180000.0)))
-
-        return {
-            "count": estimated_count,
-            "method": "stub"
-        }
+        # Convert back to base64 for the web dashboard
+        _, buffer = cv2.imencode('.jpg', opencv_image)
+        b64_str = base64.b64encode(buffer).decode('utf-8')
+        
+        return count, f"data:image/jpeg;base64,{b64_str}"

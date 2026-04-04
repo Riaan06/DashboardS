@@ -498,3 +498,28 @@ body {
     .count-card { min-height: 180px; }
     .chart-container { height: 250px; }
 }
+.grid-cell {
+    position: relative;
+    overflow: hidden;
+    background: #000;
+    min-height: 150px;
+}
+
+.ai-processed-image {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 1;
+    opacity: 0;
+    transition: opacity 0.5s;
+}
+
+.camera-zone-id, .camera-zone-count {
+    position: relative;
+    z-index: 2; /* Keep text above the image */
+    color: white;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+}
