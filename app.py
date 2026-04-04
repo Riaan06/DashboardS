@@ -1,194 +1,163 @@
 from flask import Flask, render_template, jsonify, request
-from datetime import datetime, timedelta
-import random
+from PIL import Image
+import io
+from datetime import datetime
 from collections import deque
-import base64
-import json
-import os
-from urllib import request as urlrequest
-from urllib.error import URLError, HTTPError
+
+from crowd_model import CrowdCounter
 
 app = Flask(__name__)
 
-EXTERNAL_PEOPLE_COUNT_API = os.getenv("EXTERNAL_PEOPLE_COUNT_API", "")
+ZONE_LAYOUT = [
+    ["A1", "A2", "A3"],
+    ["B1", "B2", "B3"],
+    ["C1", "C2", "C3"]
+]
 
-# Global trend history - maintains rolling window of data points
-trend_history = deque(maxlen=30)  # 30 points = 5 minutes at 10-second intervals
-last_trend_update = None
+zone_state = {
+    "A1": 0, "A2": 0, "A3": 0,
+    "B1": 0, "B2": 0, "B3": 0,
+    "C1": 0, "C2": 0, "C3": 0
+}
 
-# Mock data - simulating external AI API responses
-def get_zones_data():
-    """Simulate external AI API - Zone people counts"""
-    zones = {
-        "zones": [
-            {"id": "A1", "count": random.randint(0, 20)},
-            {"id": "A2", "count": random.randint(0, 25)},
-            {"id": "A3", "count": random.randint(0, 30)},
-            {"id": "B1", "count": random.randint(0, 15)},
-            {"id": "B2", "count": random.randint(0, 35)},
-            {"id": "B3", "count": random.randint(0, 20)},
-            {"id": "C1", "count": random.randint(0, 10)},
-            {"id": "C2", "count": random.randint(0, 40)},
-            {"id": "C3", "count": random.randint(0, 50)},
-        ],
-        "timestamp": datetime.now().isoformat()
-    }
-    zones["total"] = sum(zone["count"] for zone in zones["zones"])
-    return zones
+alerts_state = []
+trend_history = deque(maxlen=30)
+
+# keep this as stub for now, or later replace with real model
+crowd_counter = CrowdCounter(model_type="stub")
 
 
-def get_alerts_data():
-    """Simulate external AI API - Alerts"""
-    alert_messages = [
-        {"message": "Block C3 over threshold", "severity": "high"},
-        {"message": "Zone intrusion at VIP area", "severity": "high"},
-        {"message": "Unusual crowd gathering at B2", "severity": "medium"},
-        {"message": "Multiple alerts at entrance A1", "severity": "medium"},
-        {"message": "Zone A3 monitoring active", "severity": "low"},
-    ]
-    
-    # Randomly select alerts
-    selected_alerts = random.sample(alert_messages, k=random.randint(1, 3))
-    return selected_alerts
+def current_time_str():
+    return datetime.now().strftime("%H:%M:%S")
 
 
-def get_trend_data():
-    """Simulate external AI API - Trend data (last 5 minutes with proper history)"""
-    global trend_history, last_trend_update
-    
-    now = datetime.now()
-    
-    # Add new data point every 1 second (exponential moving average for smoothness)
-    if last_trend_update is None:
-        # Initialize with baseline data
-        for i in range(30):
-            count = 50 + random.randint(-10, 20)
-            trend_history.append(count)
-        last_trend_update = now
-    else:
-        # Add new data point based on previous value (creates coherent trend)
-        last_value = trend_history[-1] if trend_history else 50
-        # Smooth random walk - new value close to previous
-        change = random.randint(-5, 8)
-        new_count = max(10, min(150, last_value + change))
-        trend_history.append(new_count)
-        last_trend_update = now
-    
-    # Generate timestamps for all points in history
-    timestamps = []
-    counts = list(trend_history)
-    
-    for i in range(len(trend_history)):
-        time = now - timedelta(seconds=(len(trend_history) - i - 1) * 1)
-        timestamps.append(time.strftime("%H:%M:%S"))
-    
-    return {
-        "timestamps": timestamps,
-        "counts": counts,
-        "timestamp": datetime.now().isoformat()
-    }
+def split_image_into_9(image: Image.Image):
+    width, height = image.size
+    tile_width = width // 3
+    tile_height = height // 3
+
+    tiles = {}
+
+    for row in range(3):
+        for col in range(3):
+            x1 = col * tile_width
+            y1 = row * tile_height
+            x2 = (col + 1) * tile_width if col < 2 else width
+            y2 = (row + 1) * tile_height if row < 2 else height
+
+            zone_id = ZONE_LAYOUT[row][col]
+            tile = image.crop((x1, y1, x2, y2))
+            tiles[zone_id] = tile
+
+    return tiles
 
 
-def call_external_people_count_api(image_bytes, filename, content_type):
-    """Send uploaded image to external AI API for people counting."""
-    if not EXTERNAL_PEOPLE_COUNT_API:
-        return None, "External people-count API is not configured. Set EXTERNAL_PEOPLE_COUNT_API."
+def build_alerts_from_zones(zones_dict):
+    alerts = []
 
-    payload = {
-        "filename": filename,
-        "content_type": content_type,
-        "image_base64": base64.b64encode(image_bytes).decode("utf-8"),
-    }
+    for zone_id, count in zones_dict.items():
+        if count > 80:
+            alerts.append({
+                "severity": "high",
+                "message": f"Critical crowd density in zone {zone_id}: {count} people"
+            })
+        elif count > 40:
+            alerts.append({
+                "severity": "medium",
+                "message": f"High crowd density in zone {zone_id}: {count} people"
+            })
+        elif count > 10:
+            alerts.append({
+                "severity": "low",
+                "message": f"Moderate crowd activity in zone {zone_id}: {count} people"
+            })
 
-    req = urlrequest.Request(
-        EXTERNAL_PEOPLE_COUNT_API,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
+    if not alerts:
+        alerts.append({
+            "severity": "info",
+            "message": "All zones are operating within normal crowd levels"
+        })
+
+    return alerts
+
+
+def update_trend(total_count):
+    trend_history.append({
+        "timestamp": current_time_str(),
+        "count": total_count
+    })
+
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+
+@app.route("/api/zones")
+def api_zones():
+    total = sum(zone_state.values())
+    zones = [{"id": zone_id, "count": count} for zone_id, count in zone_state.items()]
+
+    return jsonify({
+        "zones": zones,
+        "total": total,
+        "timestamp": current_time_str()
+    })
+
+
+@app.route("/api/alerts")
+def api_alerts():
+    return jsonify(alerts_state)
+
+
+@app.route("/api/trend")
+def api_trend():
+    return jsonify({
+        "timestamps": [item["timestamp"] for item in trend_history],
+        "counts": [item["count"] for item in trend_history]
+    })
+
+
+@app.route("/api/people-count-image", methods=["POST"])
+def people_count_image():
+    global zone_state, alerts_state
+
+    if "image" not in request.files:
+        return jsonify({"error": "No image uploaded"}), 400
+
+    uploaded_file = request.files["image"]
+
+    if uploaded_file.filename == "":
+        return jsonify({"error": "Empty filename"}), 400
 
     try:
-        with urlrequest.urlopen(req, timeout=20) as response:
-            raw = response.read().decode("utf-8")
-            parsed = json.loads(raw)
-            return parsed, None
-    except HTTPError as exc:
-        return None, f"External API HTTP error: {exc.code}"
-    except URLError as exc:
-        return None, f"External API connection error: {exc.reason}"
-    except json.JSONDecodeError:
-        return None, "External API returned invalid JSON."
+        image_bytes = uploaded_file.read()
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception:
+        return jsonify({"error": "Invalid image file"}), 400
 
+    tiles = split_image_into_9(image)
 
-# Routes
-@app.route('/')
-def index():
-    """Serve the dashboard"""
-    return render_template('index.html')
+    zone_counts = {}
+    total_count = 0
 
+    for zone_id, tile in tiles.items():
+        result = crowd_counter.predict(tile)
+        count = int(round(result["count"]))
+        zone_counts[zone_id] = max(0, count)
+        total_count += zone_counts[zone_id]
 
-@app.route('/api/zones')
-def api_zones():
-    """API endpoint - Zone data proxy"""
-    return jsonify(get_zones_data())
-
-
-@app.route('/api/alerts')
-def api_alerts():
-    """API endpoint - Alerts data proxy"""
-    return jsonify(get_alerts_data())
-
-
-@app.route('/api/trend')
-def api_trend():
-    """API endpoint - Trend data proxy"""
-    return jsonify(get_trend_data())
-
-
-@app.route('/api/status')
-def api_status():
-    """API endpoint - Overall system status"""
-    zones = get_zones_data()
-    return jsonify({
-        "status": "active",
-        "total_people": zones["total"],
-        "zones_monitored": len(zones["zones"]),
-        "timestamp": datetime.now().isoformat()
-    })
-
-
-@app.route('/api/people-count-image', methods=['POST'])
-def api_people_count_image():
-    """Accept image upload, call external API, and return people-count result."""
-    if 'image' not in request.files:
-        return jsonify({"error": "Missing image file in form-data key 'image'."}), 400
-
-    image_file = request.files['image']
-    if not image_file or image_file.filename == '':
-        return jsonify({"error": "No image selected."}), 400
-
-    image_bytes = image_file.read()
-    if not image_bytes:
-        return jsonify({"error": "Uploaded image is empty."}), 400
-
-    external_result, err = call_external_people_count_api(
-        image_bytes=image_bytes,
-        filename=image_file.filename,
-        content_type=image_file.mimetype or 'application/octet-stream',
-    )
-    if err:
-        return jsonify({"error": err}), 502
-
-    people_count = external_result.get("count", external_result.get("people_count"))
-    zone_counts = external_result.get("zone_counts")
+    zone_state = zone_counts
+    alerts_state = build_alerts_from_zones(zone_counts)
+    update_trend(total_count)
 
     return jsonify({
-        "count": people_count,
+        "count": total_count,
         "zone_counts": zone_counts,
-        "raw": external_result,
-        "timestamp": datetime.now().isoformat(),
+        "method": "9-tile-processing",
+        "timestamp": current_time_str()
     })
 
 
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+if __name__ == "__main__":
+    app.run(debug=True)
